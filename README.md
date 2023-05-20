@@ -5,7 +5,7 @@
 ## Usage
 
 ```bash
-go-html-remove-empty-lines -file <file> -dir <directory> [-ext <list>] [-d]
+html-remove-empty-lines -file <file> -dir <directory> [-ext <list>] [-d]
 ```
 
 -   `-file`: File path (required if not using -dir). Specifies a single file to process.
