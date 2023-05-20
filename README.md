@@ -5,10 +5,14 @@
 ## Usage
 
 ```bash
-go-html-remove-empty-lines -dir <directory> [-d]
+go-html-remove-empty-lines -file <file> -dir <directory> [-ext <list>] [-d]
 ```
 
--   `-dir`: Directory path (required). Specifies the directory to process HTML files recursively.
+-   `-file`: File path (required if not using -dir). Specifies a single file to process.
+-   `-dir`: Directory path (required if not using -file). Specifies the directory to process HTML files recursively.
+-   `-exts`: Extensions lists. Defaults to `.html`, but a comma-separated list can be provided. Only works when using `-dir`.
 -   `-d`: Dry run mode (optional). If provided, it performs a dry run without modifying the files.
+
+**Note:** The `-file` and `-dir` options are mutually exclusive.
 
 **Note:** The utility removes empty lines from HTML files while preserving the content within `<pre></pre>` blocks.
