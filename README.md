@@ -1,18 +1,21 @@
 # [html-remove-empty-lines](https://github.com/ryanburnette/go-html-remove-empty-lines)
 
-`go-html-remove-empty-lines` is a command-line utility written in Go to remove empty lines from HTML files recursively in a directory. It is particularly useful for cleaning up generated HTML output.
+`html-remove-empty-lines` is a Go-based CLI tool for removing empty lines from HTML files.
 
 ## Usage
 
 ```bash
-html-remove-empty-lines -file <file> -dir <directory> [-ext <list>] [-d]
+html-remove-empty-lines -file <file> -dir <directory> [-exts <extensions>] [-d]
 ```
 
--   `-file`: File path (required if not using -dir). Specifies a single file to process.
--   `-dir`: Directory path (required if not using -file). Specifies the directory to process HTML files recursively.
--   `-exts`: Extensions lists. Defaults to `.html`, but a comma-separated list can be provided. Only works when using `-dir`.
--   `-d`: Dry run mode (optional). If provided, it performs a dry run without modifying the files.
+### Options
 
-**Note:** The `-file` and `-dir` options are mutually exclusive.
+-   `-file <file>`: Specify the path to a single HTML file to process. Required if `-dir` is not used.
+-   `-dir <directory>`: Specify the path to a directory to process all HTML files recursively. Required if `-file` is not used.
+-   `-exts <extensions>`: Specify a comma-separated list of file extensions to process (e.g., `.html,.htm`). Defaults to `.html`. Only applicable when using `-dir`.
+-   `-d`: Enable dry run mode. Displays changes without modifying the files.
 
-**Note:** The utility removes empty lines from HTML files while preserving the content within `<pre></pre>` blocks.
+### Notes
+
+-   The `-file` and `-dir` options are mutually exclusive; you must use one or the other.
+-   The utility removes empty lines from HTML files while preserving content within `<pre></pre>` blocks.
