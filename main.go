@@ -1,148 +1,105 @@
 package main
 
 import (
-	"bufio"
+	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
 func main() {
-	directory := flag.String("dir", "", "Directory path")
-	file := flag.String("file", "", "Single file path")
-	extensions := flag.String("ext", ".html", "File extensions")
-	dryRun := flag.Bool("d", false, "Dry run")
-	flag.Parse()
-
-	if *directory == "" && *file == "" {
-		fmt.Println("Please provide either -dir or -file flag")
-		flag.Usage()
-		os.Exit(1)
-	}
-
-	if *directory != "" {
-		extSlice := strings.Split(*extensions, ",")
-		err := processDir(*directory, *dryRun, extSlice)
-		if err != nil {
-			fmt.Printf("Error processing directory: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	if *file != "" {
-		err := processFile(*file, *dryRun)
-		if err != nil {
-			fmt.Printf("Error processing file: %v\n", err)
-			os.Exit(1)
-		}
-	}
+	os.Exit(run(os.Args[0], os.Args[1:], os.Stdout, os.Stderr))
 }
 
-func processFile(file string, dryRun bool) error {
-	content, err := ioutil.ReadFile(file)
-	if err != nil {
-		return err
-	}
-
-	newContent := removeEmptyLines(string(content))
-
-	if !dryRun {
-		err = ioutil.WriteFile(file, []byte(newContent), 0644)
-		if err != nil {
-			return fmt.Errorf("failed to write file %s: %w", file, err)
+func run(name string, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet(filepath.Base(name), flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	directory := flags.String("dir", "", "Process matching files recursively")
+	file := flags.String("file", "", "Process a single file")
+	var extensions string
+	flags.StringVar(&extensions, "ext", ".html", "Comma-separated extensions for -dir")
+	flags.StringVar(&extensions, "exts", ".html", "Alias for -ext")
+	dryRun := flags.Bool("d", false, "List files that would change")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
 		}
-		fmt.Printf("Updated file: %s\n", file)
-	} else {
-		fmt.Printf("Dry run: Updated file: %s\n", file)
+		return 2
 	}
 
-	return nil
-}
+	if (*directory == "") == (*file == "") || flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "Specify exactly one of -dir or -file, with no positional arguments.")
+		flags.Usage()
+		return 2
+	}
 
-func findFilesByExt(directory string, extensions []string) ([]string, error) {
-	var files []string
-
-	err := filepath.Walk(directory, func(path string, info os.FileInfo, err error) error {
+	process := func(path string) error {
+		changed, err := processFile(path, *dryRun)
 		if err != nil {
 			return err
 		}
-
-		if !info.IsDir() && hasExtension(info.Name(), extensions) {
-			files = append(files, path)
+		if changed {
+			if *dryRun {
+				fmt.Fprintf(stdout, "Would update: %s\n", path)
+			} else {
+				fmt.Fprintf(stdout, "Updated: %s\n", path)
+			}
 		}
-
 		return nil
-	})
+	}
 
+	var err error
+	if *file != "" {
+		err = process(*file)
+	} else {
+		err = processDir(*directory, strings.Split(extensions, ","), process)
+	}
 	if err != nil {
-		return nil, err
+		fmt.Fprintln(stderr, err)
+		return 1
 	}
-
-	return files, nil
+	return 0
 }
 
-func hasExtension(filename string, extensions []string) bool {
-	ext := filepath.Ext(filename)
-	for _, e := range extensions {
-		if strings.EqualFold(ext, e) {
-			return true
-		}
-	}
-	return false
-}
-
-func processDir(dir string, dryRun bool, extensions []string) error {
-	files, err := findFilesByExt(dir, extensions)
+func processDir(dir string, extensions []string, process func(string) error) error {
+	info, err := os.Lstat(dir)
 	if err != nil {
 		return err
 	}
-
-	for _, file := range files {
-		err := processFile(file, dryRun)
-		if err != nil {
-			fmt.Printf("Error processing file: %s: %v\n", file, err)
-		}
+	if !info.IsDir() {
+		return fmt.Errorf("%s: expected a directory", dir)
 	}
 
-	return nil
-}
+	for i, ext := range extensions {
+		ext = strings.TrimSpace(ext)
+		if !strings.HasPrefix(ext, ".") || len(ext) == 1 {
+			return fmt.Errorf("invalid extension %q: expected a value such as .html", ext)
+		}
+		extensions[i] = ext
+	}
 
-func removeEmptyLines(content string) string {
-	var lines []string
-	insidePreTag := false
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if insidePreTag {
-			lines = append(lines, line)
-		} else {
-			if strings.TrimSpace(line) != "" {
-				lines = append(lines, line)
+	var failures []error
+	err = filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			failures = append(failures, err)
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		for _, ext := range extensions {
+			if strings.EqualFold(filepath.Ext(path), ext) {
+				if err := process(path); err != nil {
+					failures = append(failures, err)
+				}
+				break
 			}
 		}
-		if strings.Contains(line, "<pre>") {
-			insidePreTag = true
-		}
-		if strings.Contains(line, "</pre>") {
-			insidePreTag = false
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-func isInsidePreTag(content []byte) bool {
-	scanner := bufio.NewScanner(strings.NewReader(string(content)))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.Contains(line, "<pre>") {
-			return true
-		}
-		if strings.Contains(line, "</pre>") {
-			return false
-		}
-	}
-	return false
+		return nil
+	})
+	return errors.Join(append(failures, err)...)
 }
