@@ -1,6 +1,8 @@
 # html-remove-empty-lines
 
-Remove blank lines from HTML files in place. The tool keeps line endings on retained lines and preserves whitespace inside `<pre>`, `<textarea>`, scripts, styles, and multiline markup.
+Remove blank lines from generated HTML in place. Template conditionals, loops, and partials can leave extra blank lines in the rendered output. Run `html-remove-empty-lines` after rendering to make the HTML easier to read and diff.
+
+The tool keeps indentation and line endings on retained lines and preserves whitespace inside `<pre>`, `<textarea>`, scripts, styles, and multiline markup.
 
 ## Install
 
