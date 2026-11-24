@@ -7,17 +7,17 @@ Remove blank lines from HTML files in place. The tool keeps line endings on reta
 With Go 1.27 or later, run:
 
 ```sh
-go install github.com/ryanburnette/go-html-remove-empty-lines@latest
+go install github.com/ryanburnette/go-html-remove-empty-lines/cmd/html-remove-empty-lines@latest
 ```
 
-Go installs the command as `go-html-remove-empty-lines`.
+Go installs the command as `html-remove-empty-lines`.
 
 ## Usage
 
 ```sh
-go-html-remove-empty-lines -file index.html
-go-html-remove-empty-lines -dir public -ext .html,.htm
-go-html-remove-empty-lines -dir public -d
+html-remove-empty-lines -file index.html
+html-remove-empty-lines -dir public -ext .html,.htm
+html-remove-empty-lines -dir public -d
 ```
 
 Use either `-file` or `-dir`. Directory mode searches recursively, skips symlinks, and matches `.html` by default. Use `-ext` to set a comma-separated list of extensions. Matching is case-insensitive.
