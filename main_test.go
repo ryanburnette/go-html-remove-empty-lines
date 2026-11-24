@@ -5,7 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
+	"runtime"
+	"slices"
 	"testing"
 )
 
@@ -50,34 +51,55 @@ func TestRunDirectory(t *testing.T) {
 	for _, path := range []string{html, htm, other} {
 		writeFixture(t, path, "\n<p>hi</p>\n")
 	}
-	target := filepath.Join(t.TempDir(), "outside.html")
-	writeFixture(t, target, "\n<p>outside</p>\n")
-	link := filepath.Join(dir, "link.html")
-	if err := os.Symlink(target, link); err != nil {
-		t.Fatal(err)
-	}
-
 	checkRun(t, 0, "Would update: "+html+"\n", "-dir", dir, "-d")
 	checkRun(t, 0, "Updated: "+html+"\nUpdated: "+htm+"\n", "-dir", dir, "-exts", ".html, .htm")
 	checkFile(t, html, "<p>hi</p>\n")
 	checkFile(t, htm, "<p>hi</p>\n")
 	checkFile(t, other, "\n<p>hi</p>\n")
+}
+
+func TestRunSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(t.TempDir(), "outside.html")
+	writeFixture(t, target, "\n<p>outside</p>\n")
+	link := filepath.Join(dir, "link.html")
+	if err := os.Symlink(target, link); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("creating symlinks is unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+
+	checkRun(t, 0, "", "-dir", dir)
 	checkFile(t, target, "\n<p>outside</p>\n")
 	checkRun(t, 1, "", "-file", link)
 }
 
 func TestRunArguments(t *testing.T) {
 	dir := t.TempDir()
-	checkRun(t, 2, "")
-	checkRun(t, 2, "", "-file", "x", "-dir", "y")
-	checkRun(t, 2, "", "-dir", dir, "extra")
-	checkRun(t, 0, "", "-h")
-	checkRun(t, 1, "", "-file", filepath.Join(dir, "missing.html"))
-	checkRun(t, 1, "", "-dir", dir, "-ext", "")
 	path := filepath.Join(dir, "page.html")
 	writeFixture(t, path, "page")
-	checkRun(t, 1, "", "-dir", path)
-	checkRun(t, 1, "", "-file", dir)
+
+	tests := []struct {
+		name string
+		args []string
+		want int
+	}{
+		{name: "missing mode", want: 2},
+		{name: "both modes", args: []string{"-file", "x", "-dir", "y"}, want: 2},
+		{name: "positional argument", args: []string{"-dir", dir, "extra"}, want: 2},
+		{name: "unknown flag", args: []string{"-unknown"}, want: 2},
+		{name: "help", args: []string{"-h"}, want: 0},
+		{name: "missing file", args: []string{"-file", filepath.Join(dir, "missing.html")}, want: 1},
+		{name: "empty extension", args: []string{"-dir", dir, "-ext", ""}, want: 1},
+		{name: "file as directory", args: []string{"-dir", path}, want: 1},
+		{name: "directory as file", args: []string{"-file", dir}, want: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checkRun(t, tt.want, "", tt.args...)
+		})
+	}
 }
 
 func TestProcessDirContinuesAfterErrors(t *testing.T) {
@@ -103,9 +125,45 @@ func TestProcessDirContinuesAfterErrors(t *testing.T) {
 	if !errors.Is(err, first) || !errors.Is(err, second) {
 		t.Fatalf("expected both errors, got %v", err)
 	}
-	if got := strings.Join(visited, ","); got != "a.html,b.html,c.html" {
-		t.Fatalf("visited %s", got)
+	want := []string{"a.html", "b.html", "c.html"}
+	if !slices.Equal(visited, want) {
+		t.Errorf("visited %q, want %q", visited, want)
 	}
+}
+
+func TestRunDirectoryReturnsFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix directory permissions")
+	}
+	dir := t.TempDir()
+	blocked := filepath.Join(dir, "a-read-only")
+	if err := os.Mkdir(blocked, 0700); err != nil {
+		t.Fatal(err)
+	}
+	first := filepath.Join(blocked, "page.html")
+	last := filepath.Join(dir, "z.html")
+	writeFixture(t, first, "\nfirst\n")
+	writeFixture(t, last, "\nlast\n")
+	if err := os.Chmod(blocked, 0500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(blocked, 0700); err != nil {
+			t.Error(err)
+		}
+	})
+	probe, err := os.CreateTemp(blocked, "probe-*")
+	if err == nil {
+		probe.Close()
+		t.Skip("process can write to a read-only directory")
+	}
+	if !errors.Is(err, os.ErrPermission) {
+		t.Fatal(err)
+	}
+
+	checkRun(t, 1, "Updated: "+last+"\n", "-dir", dir)
+	checkFile(t, first, "\nfirst\n")
+	checkFile(t, last, "last\n")
 }
 
 func TestReplaceFileRejectsChangedFile(t *testing.T) {
@@ -121,8 +179,11 @@ func TestReplaceFileRejectsChangedFile(t *testing.T) {
 	}
 	checkFile(t, path, "concurrent edit")
 	entries, err := os.ReadDir(filepath.Dir(path))
-	if err != nil || len(entries) != 1 {
-		t.Fatalf("temporary file left behind: %v, %v", entries, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("temporary file left behind: %v", entries)
 	}
 }
 
@@ -140,7 +201,7 @@ func checkFile(t *testing.T, path, want string) {
 		t.Fatal(err)
 	}
 	if string(got) != want {
-		t.Fatalf("%s contains %q, want %q", path, got, want)
+		t.Errorf("%s contains %q, want %q", path, got, want)
 	}
 }
 
@@ -148,12 +209,12 @@ func checkRun(t *testing.T, wantCode int, wantOut string, args ...string) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	if got := run("html-remove-empty-lines", args, &stdout, &stderr); got != wantCode {
-		t.Fatalf("%v exited %d, want %d; stderr: %s", args, got, wantCode, &stderr)
+		t.Errorf("run(%q) exited %d, want %d; stderr: %q", args, got, wantCode, stderr.String())
 	}
 	if got := stdout.String(); got != wantOut {
-		t.Fatalf("%v wrote %q to stdout, want %q", args, got, wantOut)
+		t.Errorf("run(%q) wrote %q to stdout, want %q", args, got, wantOut)
 	}
 	if wantCode != 0 && stderr.Len() == 0 {
-		t.Fatalf("%v failed without a diagnostic", args)
+		t.Errorf("run(%q) failed without a diagnostic", args)
 	}
 }

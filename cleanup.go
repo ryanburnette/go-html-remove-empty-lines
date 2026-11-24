@@ -44,10 +44,15 @@ func replaceFile(path string, content []byte, original os.FileInfo) error {
 		return err
 	}
 	defer os.Remove(tmp.Name())
+	defer tmp.Close()
 
-	_, writeErr := tmp.Write(content)
-	modeErr := tmp.Chmod(original.Mode().Perm())
-	if err := errors.Join(writeErr, modeErr, tmp.Close()); err != nil {
+	if _, err := tmp.Write(content); err != nil {
+		return err
+	}
+	if err := tmp.Chmod(original.Mode().Perm()); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
 		return err
 	}
 
@@ -63,7 +68,8 @@ func replaceFile(path string, content []byte, original os.FileInfo) error {
 }
 
 type byteSpan struct {
-	start, end int
+	start int
+	end   int
 }
 
 // Keep the original bytes rather than rendering tokens back to HTML.
@@ -90,7 +96,7 @@ func removeEmptyLines(content []byte) ([]byte, error) {
 
 func lineLength(content []byte) int {
 	end := bytes.IndexAny(content, "\r\n")
-	if end == -1 {
+	if end < 0 {
 		return len(content)
 	}
 	if content[end] == '\r' && end+1 < len(content) && content[end+1] == '\n' {
@@ -104,7 +110,8 @@ func protectedSpans(content []byte) ([]byteSpan, error) {
 	var spans []byteSpan
 	preDepth := 0
 	rawTag := ""
-	for start := 0; ; {
+	start := 0
+	for {
 		kind := tokenizer.Next()
 		raw := tokenizer.Raw()
 		end := start + len(raw)
@@ -116,7 +123,7 @@ func protectedSpans(content []byte) ([]byteSpan, error) {
 		// elements and raw-text elements.
 		keep := kind != html.TextToken || preDepth > 0 || rawTag != ""
 		if keep && bytes.IndexAny(raw, "\r\n") >= 0 {
-			spans = append(spans, byteSpan{start, end})
+			spans = append(spans, byteSpan{start: start, end: end})
 		}
 		if kind == html.ErrorToken {
 			return spans, nil

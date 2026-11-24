@@ -8,8 +8,10 @@ import (
 
 func TestRemoveEmptyLines(t *testing.T) {
 	longLine := "<p>" + strings.Repeat("x", 128<<10) + "</p>\n"
-	cases := []struct {
-		name, input, want string
+	tests := []struct {
+		name  string
+		input string
+		want  string
 	}{
 		{"empty", "", ""},
 		{"all blank", "\n \t\r\n\f", ""},
@@ -26,18 +28,21 @@ func TestRemoveEmptyLines(t *testing.T) {
 		{"script", "<script>let x = `<pre>\n\n`;\n</script>\n\n<p>x</p>\n", "<script>let x = `<pre>\n\n`;\n</script>\n<p>x</p>\n"},
 		{"style", "<style>\n\n</style>\n\n", "<style>\n\n</style>\n"},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := removeEmptyLines([]byte(tc.input))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := removeEmptyLines([]byte(tt.input))
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("removeEmptyLines failed: %v", err)
 			}
-			if string(got) != tc.want {
-				t.Fatalf("got %d bytes, want %d bytes", len(got), len(tc.want))
+			if string(got) != tt.want {
+				t.Fatalf("removeEmptyLines = %.120q (%d bytes), want %.120q (%d bytes)", got, len(got), tt.want, len(tt.want))
 			}
 			again, err := removeEmptyLines(got)
-			if err != nil || !bytes.Equal(again, got) {
-				t.Fatalf("second cleanup changed output or failed: %v", err)
+			if err != nil {
+				t.Fatalf("second cleanup failed: %v", err)
+			}
+			if !bytes.Equal(again, got) {
+				t.Errorf("second cleanup = %.120q, want %.120q", again, got)
 			}
 		})
 	}

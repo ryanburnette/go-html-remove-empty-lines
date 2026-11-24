@@ -42,12 +42,13 @@ func run(name string, args []string, stdout, stderr io.Writer) int {
 		if err != nil {
 			return err
 		}
-		if changed {
-			if *dryRun {
-				fmt.Fprintf(stdout, "Would update: %s\n", path)
-			} else {
-				fmt.Fprintf(stdout, "Updated: %s\n", path)
-			}
+		if !changed {
+			return nil
+		}
+		if *dryRun {
+			fmt.Fprintf(stdout, "Would update: %s\n", path)
+		} else {
+			fmt.Fprintf(stdout, "Updated: %s\n", path)
 		}
 		return nil
 	}
@@ -91,15 +92,20 @@ func processDir(dir string, extensions []string, process func(string) error) err
 		if !entry.Type().IsRegular() {
 			return nil
 		}
-		for _, ext := range extensions {
-			if strings.EqualFold(filepath.Ext(path), ext) {
-				if err := process(path); err != nil {
-					failures = append(failures, err)
-				}
-				break
+		ext := filepath.Ext(path)
+		for _, candidate := range extensions {
+			if !strings.EqualFold(ext, candidate) {
+				continue
 			}
+			if err := process(path); err != nil {
+				failures = append(failures, err)
+			}
+			break
 		}
 		return nil
 	})
-	return errors.Join(append(failures, err)...)
+	if err != nil {
+		failures = append(failures, err)
+	}
+	return errors.Join(failures...)
 }
