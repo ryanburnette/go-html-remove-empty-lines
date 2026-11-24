@@ -9,7 +9,7 @@ The tool keeps indentation and line endings on retained lines and preserves whit
 With Go 1.27 or later, run:
 
 ```sh
-go install github.com/ryanburnette/go-html-remove-empty-lines/cmd/html-remove-empty-lines@latest
+go install github.com/ryanburnette/go-html-remove-empty-lines/cmd/html-remove-empty-lines@main
 ```
 
 Go installs the command as `html-remove-empty-lines`.
